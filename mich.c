@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#include <time.h>
 
 struct arg {
 	char *argStr;
@@ -23,6 +24,9 @@ char *cmdBuf;
 size_t bufSize = 256;
 int readSize;
 struct arg *argStart;
+struct rusage *usage;
+struct timeval *before, *after;
+int errors = 0;
 
 struct arg *newArg(char* arg, struct arg *prev) {
 	struct arg *temp = malloc(sizeof(struct arg));
@@ -54,7 +58,6 @@ void outputRedirect(char* redir, char* operation, int trunc) {
 	} else {
 		dest = open(operation+src+1, O_WRONLY|O_CREAT|O_APPEND, 0666);
 	}
-	printf("dest=%d\n", dest);
 	if(dest == -1) {
 		perror("Could not open output file");
 		exit(-1);
@@ -78,15 +81,17 @@ int main(int argc, char *argv[]) {
 		exit(-1);
 	}
 
-	if(!(cmdBuf = malloc(bufSize+1))) {
+	if(!(cmdBuf = malloc(bufSize)) || !(usage = malloc(sizeof(struct rusage))) ||
+	!(before = malloc(sizeof(struct timeval))) || !(after = malloc(sizeof(struct timeval)))) {
 		fprintf(stderr, "Could not allocate buffer.\n");
 	}
+
 
 	while((readSize = getline(&cmdBuf, &bufSize, input)) != -1) {
 		if(cmdBuf[0] == '#') { //comment
 			continue;
 		}
-		cmdBuf[readSize-1] = 0;
+		cmdBuf[readSize-1] = 0; //delete newline
 		struct arg *lastArg = argStart = NULL;
 		int numArgs = 0;
 		char* argTok = strtok(cmdBuf, " \t");
@@ -99,7 +104,8 @@ int main(int argc, char *argv[]) {
 			numArgs++;
 			argTok = strtok(NULL, " \t");
 		}
-
+		
+		gettimeofday(before, NULL);
 		int pid = fork();
 
 		if(pid == 0) { //inside child
@@ -120,10 +126,10 @@ int main(int argc, char *argv[]) {
 							perror("Could not duplicate file descriptor");
 							exit(-1);
 						}
-					} else if(redir = strstr(argument, ">")) {
-						outputRedirect(redir, argument, R_TRUNCATE);
 					} else if(redir = strstr(argument, ">>")) {
 						outputRedirect(redir, argument, R_APPEND);
+					} else if(redir = strstr(argument, ">")) {
+						outputRedirect(redir, argument, R_TRUNCATE);
 					}
 					if(redir) { //redirection operation, skip it
 						numArgs--;
@@ -136,12 +142,29 @@ int main(int argc, char *argv[]) {
 				cmdArgs[i] = 0;
 			}
 			if(execvp(cmdBuf, cmdArgs) == -1) {
-				perror("error");
-				exit(1);
+				perror("Exec error");
+				exit(-1);
+			}
+		} else { //parent waits for child
+			int status;
+			wait4(pid, &status, 0, usage);
+			gettimeofday(after, NULL);
+			if(status) {
+				errors++;
+			}
+			float realTime = (after->tv_sec + after->tv_usec/1000000.0) - (before->tv_sec + before->tv_usec/1000000.0);
+			float sysTime = (usage->ru_stime.tv_sec + usage->ru_stime.tv_usec/1000000.0);
+			float userTime = (usage->ru_utime.tv_sec + usage->ru_utime.tv_usec/1000000.0);
+			printf("Exit status %d\n", status);
+			printf("Real: %fs System: %fs User: %fs\n", realTime, sysTime, userTime);
+			while(argStart) { //clean up linked list
+				struct arg *temp = argStart;
+				argStart = argStart->next;
+				free(temp);
 			}
 		}
 	}
 	
-
-	return 0;
+	printf("Doneski.\n");
+	return errors;
 }
