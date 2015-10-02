@@ -116,17 +116,17 @@ int main(int argc, char *argv[]) {
 			numArgs++;
 			argTok = strtok(NULL, " \t");
 		}
-		
-		gettimeofday(before, NULL);
-		int pid = fork();
 
-		if(pid == 0) { //inside child
-			if(numArgs) { //build the argument array from the linked list
+		if(numArgs) {
+			gettimeofday(before, NULL);
+			int pid = fork();
+
+			if(pid == 0) { //inside child
 				char **cmdArgs = NULL;
 				printf("Running %s...\n", cmdBuf);
 				cmdArgs = malloc(sizeof(char*)*numArgs+1);
 				int i;
-				for(i=0; i<numArgs; i++) {
+				for(i=0; i<numArgs; i++) { //build the argument array from the linked list
 					char* argument = argStart->argStr;
 					char* redir = NULL;
 					if((redir = strstr(argument, "<")) == argument) {
@@ -149,30 +149,30 @@ int main(int argc, char *argv[]) {
 					perror("Exec error");
 					exit(-1);
 				}
-			}
-		} else if(pid > 0) { //parent waits for child
-			int status;
-			if(wait3(&status, 0, usage) == -1) {
-				perror("Error waiting for child process");
+			} else if(pid > 0) { //parent waits for child
+				int status;
+				if(wait3(&status, 0, usage) == -1) {
+					perror("Error waiting for child process");
+					exit(-1);
+				}
+				gettimeofday(after, NULL);
+				if(status) {
+					errors++;
+				}
+				float realTime = (after->tv_sec + after->tv_usec/1000000.0) - (before->tv_sec + before->tv_usec/1000000.0);
+				float sysTime = (usage->ru_stime.tv_sec + usage->ru_stime.tv_usec/1000000.0);
+				float userTime = (usage->ru_utime.tv_sec + usage->ru_utime.tv_usec/1000000.0);
+				printf("Exit status %d\n", status);
+				printf("Real: %fs System: %fs User: %fs\n", realTime, sysTime, userTime);
+				while(argStart) { //clean up linked list
+					struct arg *temp = argStart;
+					argStart = argStart->next;
+					free(temp);
+				}
+			} else {
+				perror("Could not fork process");
 				exit(-1);
 			}
-			gettimeofday(after, NULL);
-			if(status) {
-				errors++;
-			}
-			float realTime = (after->tv_sec + after->tv_usec/1000000.0) - (before->tv_sec + before->tv_usec/1000000.0);
-			float sysTime = (usage->ru_stime.tv_sec + usage->ru_stime.tv_usec/1000000.0);
-			float userTime = (usage->ru_utime.tv_sec + usage->ru_utime.tv_usec/1000000.0);
-			printf("Exit status %d\n", status);
-			printf("Real: %fs System: %fs User: %fs\n", realTime, sysTime, userTime);
-			while(argStart) { //clean up linked list
-				struct arg *temp = argStart;
-				argStart = argStart->next;
-				free(temp);
-			}
-		} else {
-			perror("Could not fork process");
-			exit(-1);
 		}
 	}
 	
