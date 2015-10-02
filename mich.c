@@ -122,6 +122,7 @@ int main(int argc, char *argv[]) {
 
 		if(pid == 0) { //inside child
 			char **cmdArgs = NULL;
+			printf("Running %s...\n", cmdBuf);
 			if(numArgs) { //build the argument array from the linked list
 				cmdArgs = malloc(sizeof(char*)*numArgs+1);
 				int i;
@@ -144,7 +145,6 @@ int main(int argc, char *argv[]) {
 					argStart = argStart->next;
 				}
 				cmdArgs[i] = 0; //terminating null
-				printf("Running %s...\n", cmdBuf);
 				if(execvp(cmdBuf, cmdArgs) == -1) {
 					perror("Exec error");
 					exit(-1);
