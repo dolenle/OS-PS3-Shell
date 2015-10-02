@@ -19,7 +19,7 @@ struct arg {
 	struct arg *next;
 };
 
-enum redirMode {R_APPEND, R_TRUNCATE};
+enum redirMode {R_APPEND, R_TRUNCATE, R_READ};
 
 FILE *input;
 
@@ -45,21 +45,27 @@ struct arg *newArg(char* arg, struct arg *prev) {
 	return temp;
 }
 
-void outputRedirect(char* redir, char* operation, int trunc) {
+void doRedirect(char* redir, char* operation, int trunc) {
 	int src;
 	int dest;
 	if(redir == operation) {
-		src = 1; //stdout
+		if(*redir == '<') {
+			src = 0; //stdin
+		} else {
+			src = 1; //stdout
+		}
 	} else if(redir == operation+1 && operation[0] == '2') {
 		src = 2; //stderr
 	} else {
 		fprintf(stderr, "Error: Invalid redirection %s\n", operation);
 		exit(-1);
 	}
-	if(trunc) {
+	if(trunc == R_TRUNCATE) {
 		dest = open(operation+src, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-	} else {
+	} else if(trunc == R_APPEND) {
 		dest = open(operation+src+1, O_WRONLY|O_CREAT|O_APPEND, 0666);
+	} else {
+		dest = open(operation+src+1, O_RDONLY);
 	}
 	if(dest == -1) {
 		perror("Could not open output file");
@@ -68,6 +74,9 @@ void outputRedirect(char* redir, char* operation, int trunc) {
 	if(dup2(dest,src) == -1) {
 		perror("Could not duplicate file descriptor");
 		exit(-1);
+	}
+	if(close(dest) == -1) {
+		perror("Could not close destination file");
 	}
 }
 
@@ -89,21 +98,21 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Could not allocate buffer.\n");
 	}
 
-
-	while((readSize = getline(&cmdBuf, &bufSize, input)) != -1) {
+	while((readSize = getline(&cmdBuf, &bufSize, input)) != -1) { //get each line of input
 		if(cmdBuf[0] == '#') { //comment
 			continue;
 		}
 		cmdBuf[readSize-1] = 0; //delete newline
 		struct arg *lastArg = argStart = NULL;
 		int numArgs = 0;
-		char* argTok = strtok(cmdBuf, " \t");
+		char* argTok;
+		if(argTok = strtok(cmdBuf, " \t")) {
+			argStart = lastArg = newArg(argTok, NULL);
+			numArgs = 1;
+			argTok = strtok(NULL, " \t");
+		}
 		while(argTok) { //create linked list for argument parsing
-			if(!argStart) {
-				argStart = lastArg = newArg(argTok, NULL);
-			} else {
-				lastArg = newArg(argTok, lastArg);
-			}
+			lastArg = newArg(argTok, lastArg);
 			numArgs++;
 			argTok = strtok(NULL, " \t");
 		}
@@ -120,19 +129,11 @@ int main(int argc, char *argv[]) {
 					char* argument = argStart->argStr;
 					char* redir = NULL;
 					if((redir = strstr(argument, "<")) == argument) {
-						int src = open(argument+1, O_RDONLY);
-						if(!src) {
-							perror("Could not open input file");
-							exit(-1);
-						}
-						if(dup2(src,0) == -1) { //stdin
-							perror("Could not duplicate file descriptor");
-							exit(-1);
-						}
+						doRedirect(redir, argument, R_READ);
 					} else if(redir = strstr(argument, ">>")) {
-						outputRedirect(redir, argument, R_APPEND);
+						doRedirect(redir, argument, R_APPEND);
 					} else if(redir = strstr(argument, ">")) {
-						outputRedirect(redir, argument, R_TRUNCATE);
+						doRedirect(redir, argument, R_TRUNCATE);
 					}
 					if(redir) { //redirection operation, skip it
 						numArgs--;
@@ -144,13 +145,14 @@ int main(int argc, char *argv[]) {
 				}
 				cmdArgs[i] = 0; //terminating null
 			}
+			printf("Running %s...\n", cmdBuf);
 			if(execvp(cmdBuf, cmdArgs) == -1) {
 				perror("Exec error");
 				exit(-1);
 			}
 		} else if(pid > 0) { //parent waits for child
 			int status;
-			if(wait4(pid, &status, 0, usage) == -1) {
+			if(wait3(&status, 0, usage) == -1) {
 				perror("Error waiting for child process");
 				exit(-1);
 			}
