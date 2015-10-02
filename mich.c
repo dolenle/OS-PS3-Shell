@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
 				perror("Exec error");
 				exit(-1);
 			}
-		} else { //parent waits for child
+		} else if(pid > 0) { //parent waits for child
 			int status;
 			wait4(pid, &status, 0, usage);
 			gettimeofday(after, NULL);
@@ -162,6 +162,9 @@ int main(int argc, char *argv[]) {
 				argStart = argStart->next;
 				free(temp);
 			}
+		} else {
+			perror("Could not fork process");
+			exit(-1);
 		}
 	}
 	
