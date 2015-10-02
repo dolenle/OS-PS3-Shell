@@ -121,9 +121,9 @@ int main(int argc, char *argv[]) {
 		int pid = fork();
 
 		if(pid == 0) { //inside child
-			char **cmdArgs = NULL;
-			printf("Running %s...\n", cmdBuf);
 			if(numArgs) { //build the argument array from the linked list
+				char **cmdArgs = NULL;
+				printf("Running %s...\n", cmdBuf);
 				cmdArgs = malloc(sizeof(char*)*numArgs+1);
 				int i;
 				for(i=0; i<numArgs; i++) {
