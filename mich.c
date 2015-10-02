@@ -10,6 +10,9 @@
 #include <string.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
 
 struct arg {
 	char *argStr;
@@ -110,7 +113,7 @@ int main(int argc, char *argv[]) {
 
 		if(pid == 0) { //inside child
 			char **cmdArgs = NULL;
-			if(numArgs) {
+			if(numArgs) { //build the argument array from the linked list
 				cmdArgs = malloc(sizeof(char*)*numArgs+1);
 				int i;
 				for(i=0; i<numArgs; i++) {
@@ -139,7 +142,7 @@ int main(int argc, char *argv[]) {
 					}
 					argStart = argStart->next;
 				}
-				cmdArgs[i] = 0;
+				cmdArgs[i] = 0; //terminating null
 			}
 			if(execvp(cmdBuf, cmdArgs) == -1) {
 				perror("Exec error");
@@ -147,7 +150,10 @@ int main(int argc, char *argv[]) {
 			}
 		} else if(pid > 0) { //parent waits for child
 			int status;
-			wait4(pid, &status, 0, usage);
+			if(wait4(pid, &status, 0, usage) == -1) {
+				perror("Error waiting for child process");
+				exit(-1);
+			}
 			gettimeofday(after, NULL);
 			if(status) {
 				errors++;
@@ -168,6 +174,6 @@ int main(int argc, char *argv[]) {
 		}
 	}
 	
-	printf("Doneski.\n");
+	printf("EOF Reached - Doneski.\n");
 	return errors;
 }
